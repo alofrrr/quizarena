@@ -1,0 +1,68 @@
+/** 
+ * sample-questions.txt
+ * 
+ * Este é um exemplo do formato esperado no arquivo .docx
+ * Copie este conteúdo para um documento Word (.docx) para testar.
+ * 
+ * Formato: Número. Pergunta? a) opção b) opção c) opção (correta) d) opção
+ */
+
+1. Qual é a capital do Brasil?
+a) São Paulo
+b) Rio de Janeiro
+c) Brasília (correta)
+d) Salvador
+
+2. Quem pintou a Mona Lisa?
+a) Michelangelo
+b) Leonardo da Vinci (correta)
+c) Raphael
+d) Donatello
+
+3. Qual é o maior planeta do Sistema Solar?
+a) Saturno
+b) Júpiter (correta)
+c) Netuno
+d) Urano
+
+4. Em que ano o Brasil se tornou independente?
+a) 1500
+b) 1822 (correta)
+c) 1889
+d) 1900
+
+5. Qual é a fórmula química da água?
+a) CO2
+b) NaCl
+c) H2O (correta)
+d) O2
+
+6. Quem escreveu "Dom Casmurro"?
+a) José de Alencar
+b) Machado de Assis (correta)
+c) Jorge Amado
+d) Clarice Lispector
+
+7. Qual é o maior osso do corpo humano?
+a) Úmero
+b) Tíbia
+c) Fêmur (correta)
+d) Fíbula
+
+8. Qual é a velocidade da luz no vácuo?
+a) 300.000 km/s (correta)
+b) 150.000 km/s
+c) 500.000 km/s
+d) 1.000.000 km/s
+
+9. Qual elemento químico é representado pelo símbolo "Fe"?
+a) Flúor
+b) Ferro (correta)
+c) Fósforo
+d) Francio
+
+10. Quantos estados tem o Brasil?
+a) 24
+b) 25
+c) 26 (correta)
+d) 27
