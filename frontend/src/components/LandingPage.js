@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
+import { salvarLocal, carregarLocal, removerLocal } from '../utils/storage';
 import axios from 'axios';
+
+// Chave usada para lembrar o último nickname digitado pelo aluno.
+// Ao recarregar a página o campo já vem preenchido, evitando redigitar.
+const CHAVE_NICKNAME = 'quizarena_ultimo_nickname';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
@@ -16,13 +21,21 @@ const OPTION_COLORS = [
 
 export default function LandingPage() {
   const [pin, setPin] = useState('');
-  const [nickname, setNickname] = useState('');
+  // Recupera o último nickname salvo para não obrigar o aluno a redigitar
+  const [nickname, setNickname] = useState(() => carregarLocal(CHAVE_NICKNAME, ''));
   const [step, setStep] = useState('pin'); // pin | nickname
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { emit, isConnected } = useSocket();
   const { dispatch } = useGame();
+
+  // Persiste o nickname sempre que o aluno digita, para sobreviver a recarregamentos
+  useEffect(() => {
+    if (nickname) {
+      salvarLocal(CHAVE_NICKNAME, nickname);
+    }
+  }, [nickname]);
 
   const handlePinSubmit = async (e) => {
     e.preventDefault();
@@ -64,6 +77,8 @@ export default function LandingPage() {
       dispatch({ type: 'SET_ROLE', payload: 'student' });
       dispatch({ type: 'SET_ROOM', payload: { pin } });
       dispatch({ type: 'SET_NICKNAME', payload: nickname.trim() });
+      // Limpa o rascunho — nickname já está no GameContext (persistido via SESSION_KEY)
+      removerLocal(CHAVE_NICKNAME);
       navigate('/play');
     });
   };

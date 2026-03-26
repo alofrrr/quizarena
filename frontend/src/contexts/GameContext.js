@@ -5,6 +5,7 @@
  */
 
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import { salvarLocal, carregarLocal, removerLocal } from '../utils/storage';
 
 const GameContext = createContext(null);
 
@@ -30,13 +31,12 @@ const initialState = {
 };
 
 function loadFromStorage() {
-  try {
-    const saved = localStorage.getItem(SESSION_KEY);
-    if (!saved) return initialState;
-    return { ...initialState, ...JSON.parse(saved) };
-  } catch {
-    return initialState;
-  }
+  // Usa o utilitário para não duplicar try/catch aqui
+  const saved = carregarLocal(SESSION_KEY);
+  if (!saved) return initialState;
+  // Spread garante que campos novos em initialState nunca fiquem ausentes
+  // caso a sessão salva seja de uma versão anterior do código
+  return { ...initialState, ...saved };
 }
 
 function gameReducer(state, action) {
@@ -112,15 +112,13 @@ export function GameProvider({ children }) {
   // Initialise from localStorage so a page refresh restores the session
   const [state, dispatch] = useReducer(gameReducer, undefined, loadFromStorage);
 
-  // Persist state to localStorage whenever it changes.
-  // When role is null (after RESET) remove the key entirely.
+  // Persiste o estado no localStorage a cada mudança.
+  // Quando role é null (após RESET) remove a chave para não deixar lixo.
   useEffect(() => {
     if (state.role) {
-      try {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(state));
-      } catch {}
+      salvarLocal(SESSION_KEY, state);
     } else {
-      localStorage.removeItem(SESSION_KEY);
+      removerLocal(SESSION_KEY);
     }
   }, [state]);
 
