@@ -15,7 +15,7 @@ const OPTION_COLORS = [
 const OPTION_SHAPES = ['▲', '◆', '●', '■'];
 
 export default function StudentPage() {
-  const { emit, on, off } = useSocket();
+  const { emit, on, off, isConnected } = useSocket();
   const { state, dispatch } = useGame();
   const navigate = useNavigate();
   const [selectedOption, setSelectedOption] = useState(null);
@@ -29,8 +29,10 @@ export default function StudentPage() {
     return cleanup;
   }, []);
 
-  // Socket listeners
+  // Socket listeners — depend on isConnected so they register on the live socket
   useEffect(() => {
+    if (!isConnected) return;
+
     const handleGameStarted = (data) => {
       dispatch({ type: 'GAME_STARTED', payload: data });
     };
@@ -63,7 +65,7 @@ export default function StudentPage() {
       off('question:results', handleQuestionResults);
       off('game:finished', handleGameFinished);
     };
-  }, [on, off, dispatch]);
+  }, [on, off, dispatch, isConnected]);
 
   // Countdown timer
   useEffect(() => {

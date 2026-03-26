@@ -25,8 +25,10 @@ export default function HostPage() {
   const [countdown, setCountdown] = useState(null);
   const timerRef = useRef(null);
 
-  // Socket event listeners
+  // Socket event listeners — depend on isConnected so they register on the live socket
   useEffect(() => {
+    if (!isConnected) return;
+
     const handlePlayerJoined = (data) => {
       dispatch({ type: 'PLAYER_JOINED', payload: { nickname: data.nickname, score: 0 } });
     };
@@ -64,7 +66,14 @@ export default function HostPage() {
       off('question:results', handleQuestionResults);
       off('game:finished', handleGameFinished);
     };
-  }, [on, off, dispatch]);
+  }, [on, off, dispatch, isConnected]);
+
+  // Re-join room when socket reconnects so hostSocketId stays current on the server
+  useEffect(() => {
+    if (isConnected && state.pin && state.role === 'host') {
+      emit('host:join', state.pin, () => {});
+    }
+  }, [isConnected, state.pin, state.role, emit]);
 
   // Countdown timer
   useEffect(() => {
