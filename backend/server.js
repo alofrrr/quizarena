@@ -24,15 +24,37 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: function (origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc)
+      if (!origin) return callback(null, true);
+      
+      const allowedOrigins = [
+        process.env.CLIENT_URL,
+        'http://localhost:3000',
+        'http://localhost:3001',
+      ].filter(Boolean);
+
+      // Check exact match or if origin contains vercel.app or railway.app
+      const isAllowed = allowedOrigins.some(allowed => origin === allowed || origin === allowed.replace(/\/$/, ''))
+        || origin.includes('vercel.app')
+        || origin.includes('railway.app')
+        || origin.includes('localhost');
+
+      callback(null, isAllowed);
+    },
     methods: ['GET', 'POST'],
+    credentials: true,
   },
   maxHttpBufferSize: 5e6, // 5MB
   pingTimeout: 60000,
   pingInterval: 25000,
+  transports: ['websocket', 'polling'],
 });
 
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
 app.use(express.json());
 
 // ─── File Upload Config ───
