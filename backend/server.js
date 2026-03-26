@@ -63,40 +63,45 @@ function generatePin() {
 
 /**
  * Parse DOCX content into structured questions.
- * Expected format:
- *   1. Pergunta aqui? a) opção A b) opção B c) opção C (correta) d) opção D
- * 
- * Supports multiline and various spacing.
+ * Supports both formats:
+ *   Inline:    1. Pergunta? a) opção b) opção c) opção (correta) d) opção
+ *   Multiline: 1. Pergunta?
+ *              a) opção
+ *              b) opção (correta)
+ *              c) opção
+ *              d) opção
  */
 function parseQuestions(text) {
   const questions = [];
   
-  // Normalize line breaks and whitespace
-  const normalized = text
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\n{3,}/g, '\n\n');
+  // Normalize: collapse all whitespace into single line, then re-split by question numbers
+  const collapsed = text
+    .replace(/\r\n/g, ' ')
+    .replace(/\r/g, ' ')
+    .replace(/\n/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 
-  // Split by question number pattern: "1." or "1)" at line start
-  const blocks = normalized.split(/(?=^\s*\d+[\.\)]\s)/m).filter(b => b.trim());
+  // Split by question number pattern: "1." or "1)" preceded by space or start
+  const blocks = collapsed.split(/(?=(?:^|\s)\d+[\.\)]\s)/g).filter(b => b.trim());
 
   for (const block of blocks) {
     try {
-      // Extract question number and text
-      const qMatch = block.match(/^\s*(\d+)[\.\)]\s*(.+?)(?=\s*[a-eA-E]\s*\))/s);
+      // Extract question number and text (everything before first a) b) c) etc)
+      const qMatch = block.match(/^\s*(\d+)[\.\)]\s*(.+?)(?=\s+[a-eA-E]\s*\))/s);
       if (!qMatch) continue;
 
       const questionNumber = parseInt(qMatch[1]);
-      const questionText = qMatch[2].replace(/\n/g, ' ').trim();
+      const questionText = qMatch[2].trim();
 
       // Extract options — look for a) b) c) d) e) patterns
-      const optionRegex = /([a-eA-E])\s*\)\s*(.+?)(?=\s*[a-eA-E]\s*\)|$)/gs;
+      const optionRegex = /([a-eA-E])\s*\)\s*(.+?)(?=\s+[a-eA-E]\s*\)|$)/g;
       const options = [];
       let correctIndex = -1;
       let match;
 
       while ((match = optionRegex.exec(block)) !== null) {
-        let optionText = match[2].replace(/\n/g, ' ').trim();
+        let optionText = match[2].trim();
         const letter = match[1].toLowerCase();
 
         // Check if this option is marked as correct
@@ -105,6 +110,9 @@ function parseQuestions(text) {
           optionText = optionText.replace(/\s*\(correta\)\s*/gi, '').trim();
           correctIndex = options.length;
         }
+
+        // Clean trailing dots
+        optionText = optionText.replace(/\.\s*$/, '').trim();
 
         options.push({
           letter,
