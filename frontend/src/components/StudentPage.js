@@ -23,6 +23,12 @@ export default function StudentPage() {
   const [answerFeedback, setAnswerFeedback] = useState(null);
   const timerRef = useRef(null);
 
+  // Track whether the socket was already connected when this component first mounted.
+  // If it was NOT connected (page refresh scenario), we need to re-emit student:join
+  // once the socket connects to re-register with the server.
+  const wasConnectedOnMount = useRef(isConnected);
+  const hasRejoined = useRef(false);
+
   // Enable anti-cheat
   useEffect(() => {
     const cleanup = enableAntiCheat();
@@ -67,6 +73,29 @@ export default function StudentPage() {
     };
   }, [on, off, dispatch, isConnected]);
 
+  // After a page refresh the socket starts disconnected and then connects.
+  // When that happens and the student was in the lobby, re-emit student:join
+  // so the server recognises them again.
+  useEffect(() => {
+    if (
+      isConnected &&
+      !wasConnectedOnMount.current &&
+      !hasRejoined.current &&
+      state.pin &&
+      state.nickname &&
+      state.status === 'lobby'
+    ) {
+      hasRejoined.current = true;
+      emit('student:join', { pin: state.pin, nickname: state.nickname }, (response) => {
+        if (response?.error) {
+          // Room no longer available — reset and go back to join screen
+          dispatch({ type: 'RESET' });
+          navigate('/');
+        }
+      });
+    }
+  }, [isConnected, state.pin, state.nickname, state.status, emit, dispatch, navigate]);
+
   // Countdown timer
   useEffect(() => {
     if (countdown === null || countdown <= 0) return;
@@ -106,9 +135,19 @@ export default function StudentPage() {
     if (!state.pin) navigate('/');
   }, [state.pin, navigate]);
 
-  // ── RENDER: Waiting in Lobby ──
+  // Clears local session and returns to the landing page
+  const handleLogout = useCallback(() => {
+    dispatch({ type: 'RESET' });
+    navigate('/');
+  }, [dispatch, navigate]);
+
+  // ── SCREENS ──
+
+  let screen = null;
+
+  // ── Waiting in Lobby ──
   if (state.status === 'lobby') {
-    return (
+    screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -141,11 +180,10 @@ export default function StudentPage() {
         </motion.div>
       </div>
     );
-  }
 
-  // ── RENDER: Game Starting ──
-  if (state.status === 'playing' && !state.currentQuestion) {
-    return (
+  // ── Game Starting ──
+  } else if (state.status === 'playing' && !state.currentQuestion) {
+    screen = (
       <div className="min-h-screen flex items-center justify-center">
         <motion.div
           initial={{ scale: 0.5, opacity: 0 }}
@@ -162,81 +200,79 @@ export default function StudentPage() {
         </motion.div>
       </div>
     );
-  }
 
-  // ── RENDER: Question (Student answering) ──
-  if (state.status === 'question') {
+  // ── Question (Student answering) ──
+  } else if (state.status === 'question') {
     const q = state.currentQuestion;
-    if (!q) return null;
-
-    return (
-      <div className="min-h-screen flex flex-col p-4">
-        {/* Timer & Progress */}
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-xs text-slate-500">
-            {state.currentQuestionIndex + 1}/{state.totalQuestions}
-          </span>
-          <motion.div
-            key={countdown}
-            initial={{ scale: 1.5 }}
-            animate={{ scale: 1 }}
-            className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl border-2 ${
-              countdown <= 5 ? 'border-rose-500 text-rose-400 animate-pulse' : 'border-violet-500 text-violet-400'
-            }`}
-          >
-            {countdown ?? '--'}
-          </motion.div>
-        </div>
-
-        {/* Question text */}
-        <motion.h2
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-xl font-bold text-center mb-6 leading-snug px-2"
-        >
-          {q.text}
-        </motion.h2>
-
-        {/* Option buttons — big touch-friendly for mobile */}
-        <div className="flex-1 grid grid-cols-1 gap-3">
-          {q.options.map((opt, i) => (
-            <motion.button
-              key={i}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.08 }}
-              onClick={() => submitAnswer(i)}
-              disabled={selectedOption !== null}
-              whileTap={{ scale: 0.95 }}
-              className={`relative w-full py-5 px-6 rounded-2xl font-bold text-lg text-left flex items-center gap-4 transition-all ${
-                selectedOption === i
-                  ? 'ring-4 ring-white/50 brightness-110'
-                  : selectedOption !== null
-                  ? 'opacity-40'
-                  : ''
-              } bg-gradient-to-r ${OPTION_COLORS[i]} shadow-lg`}
+    if (q) {
+      screen = (
+        <div className="min-h-screen flex flex-col p-4">
+          {/* Timer & Progress */}
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs text-slate-500">
+              {state.currentQuestionIndex + 1}/{state.totalQuestions}
+            </span>
+            <motion.div
+              key={countdown}
+              initial={{ scale: 1.5 }}
+              animate={{ scale: 1 }}
+              className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl border-2 ${
+                countdown <= 5 ? 'border-rose-500 text-rose-400 animate-pulse' : 'border-violet-500 text-violet-400'
+              }`}
             >
-              <span className="text-2xl opacity-70">{OPTION_SHAPES[i]}</span>
-              <span className="flex-1">{opt.text}</span>
-              {selectedOption === i && (
-                <motion.span
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="w-8 h-8 rounded-full bg-white/30 flex items-center justify-center"
-                >
-                  ✓
-                </motion.span>
-              )}
-            </motion.button>
-          ))}
-        </div>
-      </div>
-    );
-  }
+              {countdown ?? '--'}
+            </motion.div>
+          </div>
 
-  // ── RENDER: Answered — waiting for results ──
-  if (state.status === 'answered') {
-    return (
+          {/* Question text */}
+          <motion.h2
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-xl font-bold text-center mb-6 leading-snug px-2"
+          >
+            {q.text}
+          </motion.h2>
+
+          {/* Option buttons — big touch-friendly for mobile */}
+          <div className="flex-1 grid grid-cols-1 gap-3">
+            {q.options.map((opt, i) => (
+              <motion.button
+                key={i}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.08 }}
+                onClick={() => submitAnswer(i)}
+                disabled={selectedOption !== null}
+                whileTap={{ scale: 0.95 }}
+                className={`relative w-full py-5 px-6 rounded-2xl font-bold text-lg text-left flex items-center gap-4 transition-all ${
+                  selectedOption === i
+                    ? 'ring-4 ring-white/50 brightness-110'
+                    : selectedOption !== null
+                    ? 'opacity-40'
+                    : ''
+                } bg-gradient-to-r ${OPTION_COLORS[i]} shadow-lg`}
+              >
+                <span className="text-2xl opacity-70">{OPTION_SHAPES[i]}</span>
+                <span className="flex-1">{opt.text}</span>
+                {selectedOption === i && (
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="w-8 h-8 rounded-full bg-white/30 flex items-center justify-center"
+                  >
+                    ✓
+                  </motion.span>
+                )}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+  // ── Answered — waiting for results ──
+  } else if (state.status === 'answered') {
+    screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <AnimatePresence mode="wait">
           {answerFeedback && (
@@ -296,12 +332,11 @@ export default function StudentPage() {
         </AnimatePresence>
       </div>
     );
-  }
 
-  // ── RENDER: Question Results (student sees correct answer) ──
-  if (state.status === 'results' && state.questionResults) {
+  // ── Question Results (student sees correct answer) ──
+  } else if (state.status === 'results' && state.questionResults) {
     const qr = state.questionResults;
-    return (
+    screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -347,14 +382,13 @@ export default function StudentPage() {
         </motion.div>
       </div>
     );
-  }
 
-  // ── RENDER: Game Finished ──
-  if (state.status === 'finished') {
+  // ── Game Finished ──
+  } else if (state.status === 'finished') {
     const myRank = state.rankings.findIndex(r => r.nickname === state.nickname) + 1;
     const isTop3 = myRank <= 3 && myRank > 0;
 
-    return (
+    screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
@@ -417,5 +451,23 @@ export default function StudentPage() {
     );
   }
 
-  return null;
+  return (
+    <>
+      {/* Logout button — visible whenever there is an active session */}
+      {state.pin && (
+        <motion.button
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          onClick={handleLogout}
+          className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/90 backdrop-blur border border-slate-700 text-slate-400 hover:text-rose-400 hover:border-rose-500/50 hover:bg-rose-500/10 text-sm font-medium transition-all shadow-lg"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          Sair
+        </motion.button>
+      )}
+      {screen}
+    </>
+  );
 }

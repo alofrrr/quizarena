@@ -143,9 +143,19 @@ export default function HostPage() {
     URL.revokeObjectURL(url);
   }, [state.report, state.pin]);
 
-  // ── RENDER: Upload Screen ──
+  // Clears local session and returns to the landing page
+  const handleLogout = useCallback(() => {
+    dispatch({ type: 'RESET' });
+    navigate('/');
+  }, [dispatch, navigate]);
+
+  // ── SCREENS ──
+
+  let screen = null;
+
+  // ── Upload Screen ──
   if (!state.pin) {
-    return (
+    screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -229,11 +239,10 @@ d) Salvador`}
         </motion.div>
       </div>
     );
-  }
 
-  // ── RENDER: Lobby ──
-  if (state.status === 'lobby') {
-    return (
+  // ── Lobby ──
+  } else if (state.status === 'lobby') {
+    screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
@@ -302,13 +311,12 @@ d) Salvador`}
         </motion.div>
       </div>
     );
-  }
 
-  // ── RENDER: Question Display (Host/Projector) ──
-  if (state.status === 'question' || state.status === 'playing') {
+  // ── Question Display (Host/Projector) ──
+  } else if (state.status === 'question' || state.status === 'playing') {
     const q = state.currentQuestion;
     if (!q) {
-      return (
+      screen = (
         <div className="min-h-screen flex items-center justify-center">
           <motion.div
             animate={{ rotate: 360 }}
@@ -317,68 +325,67 @@ d) Salvador`}
           />
         </div>
       );
+    } else {
+      screen = (
+        <div className="min-h-screen flex flex-col p-6">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <span className="text-slate-400 text-sm">
+              Questão {state.currentQuestionIndex + 1}/{state.totalQuestions}
+            </span>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-slate-400">
+                Respostas: {state.answerCount}/{state.players.length}
+              </span>
+              <motion.div
+                key={countdown}
+                initial={{ scale: 1.3 }}
+                animate={{ scale: 1 }}
+                className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl border-2 ${
+                  countdown <= 5 ? 'border-rose-500 text-rose-400' : 'border-violet-500 text-violet-400'
+                }`}
+              >
+                {countdown ?? '--'}
+              </motion.div>
+            </div>
+          </div>
+
+          {/* Question */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex-1 flex flex-col items-center justify-center max-w-4xl mx-auto w-full"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold text-center mb-12 leading-snug">
+              {q.text}
+            </h2>
+
+            {/* Options grid */}
+            <div className="grid grid-cols-2 gap-4 w-full">
+              {q.options.map((opt, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className={`${OPTION_COLORS[i]?.bg || 'bg-slate-700'} rounded-2xl p-6 flex items-center gap-4`}
+                >
+                  <span className="text-3xl opacity-60">{OPTION_SHAPES[i]}</span>
+                  <span className="text-xl font-medium">{opt.text}</span>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
+      );
     }
 
-    return (
-      <div className="min-h-screen flex flex-col p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <span className="text-slate-400 text-sm">
-            Questão {state.currentQuestionIndex + 1}/{state.totalQuestions}
-          </span>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-400">
-              Respostas: {state.answerCount}/{state.players.length}
-            </span>
-            <motion.div
-              key={countdown}
-              initial={{ scale: 1.3 }}
-              animate={{ scale: 1 }}
-              className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl border-2 ${
-                countdown <= 5 ? 'border-rose-500 text-rose-400' : 'border-violet-500 text-violet-400'
-              }`}
-            >
-              {countdown ?? '--'}
-            </motion.div>
-          </div>
-        </div>
-
-        {/* Question */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex-1 flex flex-col items-center justify-center max-w-4xl mx-auto w-full"
-        >
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-12 leading-snug">
-            {q.text}
-          </h2>
-
-          {/* Options grid */}
-          <div className="grid grid-cols-2 gap-4 w-full">
-            {q.options.map((opt, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className={`${OPTION_COLORS[i]?.bg || 'bg-slate-700'} rounded-2xl p-6 flex items-center gap-4`}
-              >
-                <span className="text-3xl opacity-60">{OPTION_SHAPES[i]}</span>
-                <span className="text-xl font-medium">{opt.text}</span>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // ── RENDER: Question Results ──
-  if (state.status === 'results' && state.questionResults) {
+  // ── Question Results ──
+  } else if (state.status === 'results' && state.questionResults) {
     const qr = state.questionResults;
     const q = state.currentQuestion;
 
-    return (
+    screen = (
       <div className="min-h-screen flex flex-col p-6">
         <div className="flex-1 flex flex-col items-center justify-center max-w-4xl mx-auto w-full">
           {/* Correct answer */}
@@ -477,10 +484,9 @@ d) Salvador`}
         </div>
       </div>
     );
-  }
 
-  // ── RENDER: Game Finished / Podium ──
-  if (state.status === 'finished') {
+  // ── Game Finished / Podium ──
+  } else if (state.status === 'finished') {
     const top3 = (state.rankings || []).slice(0, 3);
     const rest = (state.rankings || []).slice(3);
     const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
@@ -488,7 +494,7 @@ d) Salvador`}
     const podiumColors = ['bg-slate-400', 'bg-amber-400', 'bg-amber-700'];
     const podiumLabels = ['2°', '1°', '3°'];
 
-    return (
+    screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 py-10">
         <motion.h2
           initial={{ opacity: 0, y: -20 }}
@@ -561,7 +567,7 @@ d) Salvador`}
           </div>
         )}
 
-        {/* Report button */}
+        {/* Action buttons */}
         <div className="flex gap-4">
           {state.report && (
             <motion.button
@@ -595,5 +601,23 @@ d) Salvador`}
     );
   }
 
-  return null;
+  return (
+    <>
+      {/* Logout button — visible whenever there is an active room */}
+      {state.pin && (
+        <motion.button
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          onClick={handleLogout}
+          className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/90 backdrop-blur border border-slate-700 text-slate-400 hover:text-rose-400 hover:border-rose-500/50 hover:bg-rose-500/10 text-sm font-medium transition-all shadow-lg"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          Sair
+        </motion.button>
+      )}
+      {screen}
+    </>
+  );
 }

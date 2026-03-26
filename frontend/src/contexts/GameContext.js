@@ -1,11 +1,14 @@
 /**
  * GameContext.js
  * Manages game state: room data, current question, scores, rankings.
+ * State is persisted to localStorage so that a page refresh restores the session.
  */
 
-import React, { createContext, useContext, useReducer, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
 
 const GameContext = createContext(null);
+
+export const SESSION_KEY = 'quizarena_session';
 
 const initialState = {
   role: null,         // 'host' | 'student'
@@ -25,6 +28,16 @@ const initialState = {
   report: null,
   questionResults: null,
 };
+
+function loadFromStorage() {
+  try {
+    const saved = localStorage.getItem(SESSION_KEY);
+    if (!saved) return initialState;
+    return { ...initialState, ...JSON.parse(saved) };
+  } catch {
+    return initialState;
+  }
+}
 
 function gameReducer(state, action) {
   switch (action.type) {
@@ -96,7 +109,20 @@ function gameReducer(state, action) {
 }
 
 export function GameProvider({ children }) {
-  const [state, dispatch] = useReducer(gameReducer, initialState);
+  // Initialise from localStorage so a page refresh restores the session
+  const [state, dispatch] = useReducer(gameReducer, undefined, loadFromStorage);
+
+  // Persist state to localStorage whenever it changes.
+  // When role is null (after RESET) remove the key entirely.
+  useEffect(() => {
+    if (state.role) {
+      try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+      } catch {}
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  }, [state]);
 
   const resetGame = useCallback(() => dispatch({ type: 'RESET' }), []);
 
