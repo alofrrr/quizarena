@@ -209,11 +209,11 @@ export default function StudentPage() {
           className="text-center"
         >
           <motion.div
-            animate={{ scale: [1, 1.1, 1] }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className="w-20 h-20 rounded-full bg-violet-500/20 border-2 border-violet-500/50 flex items-center justify-center mx-auto mb-6"
+            animate={{ scale: [1, 1.08, 1] }}
+            transition={{ duration: 2.5, repeat: Infinity }}
+            className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/30 flex items-center justify-center mx-auto mb-6"
           >
-            <span className="text-3xl font-bold text-violet-400">
+            <span className="text-3xl font-bold bg-gradient-to-br from-violet-400 to-indigo-400 bg-clip-text text-transparent">
               {state.nickname?.[0]?.toUpperCase()}
             </span>
           </motion.div>
@@ -221,14 +221,14 @@ export default function StudentPage() {
           <h2 className="text-2xl font-bold mb-1">{state.nickname}</h2>
           <p className="text-slate-400 mb-8">Você está na sala!</p>
 
-          <div className="bg-slate-900/50 rounded-2xl p-6 inline-block">
+          <div className="bg-slate-800/40 border border-slate-700/30 rounded-2xl p-6 inline-block">
             <div className="flex items-center gap-3">
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                className="w-6 h-6 border-2 border-violet-400 border-t-transparent rounded-full"
+                className="w-5 h-5 border-2 border-violet-400 border-t-transparent rounded-full"
               />
-              <span className="text-slate-300">Aguardando o professor iniciar...</span>
+              <span className="text-slate-300 text-sm">Aguardando o professor iniciar...</span>
             </div>
           </div>
         </motion.div>
@@ -259,22 +259,42 @@ export default function StudentPage() {
   } else if (state.status === 'question') {
     const q = state.currentQuestion;
     if (q) {
+      const timeLimit = q.timeLimit || 20;
+      const timerProgress = countdown !== null ? countdown / timeLimit : 1;
+      const circumference = 2 * Math.PI * 20;
+
       screen = (
-        <div className="min-h-screen flex flex-col p-4">
-          {/* Timer & Progress */}
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs text-slate-500">
-              {state.currentQuestionIndex + 1}/{state.totalQuestions}
-            </span>
+        <div className="min-h-screen flex flex-col p-4 pt-14">
+          {/* Timer & Progress header */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 bg-slate-800/60 px-2.5 py-1 rounded-lg">
+                {state.currentQuestionIndex + 1} / {state.totalQuestions}
+              </span>
+            </div>
+            {/* Circular timer with SVG progress ring */}
             <motion.div
               key={countdown}
-              initial={{ scale: 1.5 }}
+              initial={{ scale: 1.3 }}
               animate={{ scale: 1 }}
-              className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl border-2 ${
-                countdown <= 5 ? 'border-rose-500 text-rose-400 animate-pulse' : 'border-violet-500 text-violet-400'
-              }`}
+              className="relative w-14 h-14 flex items-center justify-center"
             >
-              {countdown ?? '--'}
+              <svg className="absolute inset-0 w-14 h-14 -rotate-90" viewBox="0 0 44 44">
+                <circle cx="22" cy="22" r="20" fill="none" stroke="currentColor"
+                  className="text-slate-800" strokeWidth="3" />
+                <circle cx="22" cy="22" r="20" fill="none" stroke="currentColor"
+                  className={countdown <= 5 ? 'text-rose-500' : 'text-violet-500'}
+                  strokeWidth="3" strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={circumference * (1 - timerProgress)}
+                  style={{ transition: 'stroke-dashoffset 1s linear' }}
+                />
+              </svg>
+              <span className={`font-bold text-lg ${
+                countdown <= 5 ? 'text-rose-400 animate-pulse' : 'text-violet-400'
+              }`}>
+                {countdown ?? '--'}
+              </span>
             </motion.div>
           </div>
 
@@ -300,13 +320,15 @@ export default function StudentPage() {
                 whileTap={{ scale: 0.95 }}
                 className={`relative w-full py-5 px-6 rounded-2xl font-bold text-lg text-left flex items-center gap-4 transition-all ${
                   selectedOption === i
-                    ? 'ring-4 ring-white/50 brightness-110'
+                    ? 'ring-4 ring-white/40 brightness-110 scale-[1.02]'
                     : selectedOption !== null
-                    ? 'opacity-40'
-                    : ''
+                    ? 'opacity-30 scale-[0.98]'
+                    : 'hover:brightness-110'
                 } bg-gradient-to-r ${OPTION_COLORS[i]} shadow-lg`}
               >
-                <span className="text-2xl opacity-70">{OPTION_SHAPES[i]}</span>
+                <span className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-base">
+                  {OPTION_SHAPES[i]}
+                </span>
                 <span className="flex-1">{opt.text}</span>
                 {selectedOption === i && (
                   <motion.span
@@ -314,7 +336,9 @@ export default function StudentPage() {
                     animate={{ scale: 1 }}
                     className="w-8 h-8 rounded-full bg-white/30 flex items-center justify-center"
                   >
-                    ✓
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
                   </motion.span>
                 )}
               </motion.button>
@@ -326,6 +350,7 @@ export default function StudentPage() {
 
   // ── Answered — waiting for results ──
   } else if (state.status === 'answered') {
+    const q = state.currentQuestion;
     screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <AnimatePresence mode="wait">
@@ -333,17 +358,28 @@ export default function StudentPage() {
             <motion.div
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="text-center"
+              className="text-center w-full max-w-md"
             >
+              {/* Show the question text */}
+              {q && (
+                <motion.p
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-slate-400 text-sm mb-6 leading-relaxed px-2"
+                >
+                  {q.text}
+                </motion.p>
+              )}
+
               {answerFeedback.isCorrect ? (
                 <>
                   <motion.div
                     initial={{ rotate: 0 }}
                     animate={{ rotate: [0, -10, 10, -10, 0] }}
                     transition={{ duration: 0.5 }}
-                    className="text-7xl mb-4"
+                    className="mb-4"
                   >
-                    <svg className="w-24 h-24 mx-auto text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <svg className="w-20 h-20 mx-auto text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </motion.div>
@@ -369,18 +405,35 @@ export default function StudentPage() {
                 </>
               ) : (
                 <>
-                  <div className="text-7xl mb-4">
-                    <svg className="w-24 h-24 mx-auto text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <div className="mb-4">
+                    <svg className="w-20 h-20 mx-auto text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <h3 className="text-3xl font-black text-rose-400">Errou!</h3>
+                  <h3 className="text-3xl font-black text-rose-400 mb-2">Errou!</h3>
+                  {/* Show which option they picked */}
+                  {q && selectedOption !== null && q.options[selectedOption] && (
+                    <motion.p
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.2 }}
+                      className="text-slate-500 text-sm"
+                    >
+                      Sua resposta: <span className="text-slate-300">{q.options[selectedOption].text}</span>
+                    </motion.p>
+                  )}
                 </>
               )}
 
-              <p className="text-slate-500 text-sm mt-6">
-                Aguardando próxima questão...
-              </p>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+                className="text-slate-600 text-xs mt-8 flex items-center justify-center gap-2"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-600 animate-pulse" />
+                Aguardando resultados...
+              </motion.p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -390,6 +443,7 @@ export default function StudentPage() {
   // ── Question Results (student sees correct answer) ──
   } else if (state.status === 'results' && state.questionResults) {
     const qr = state.questionResults;
+    const q = state.currentQuestion;
     screen = (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <motion.div
@@ -397,13 +451,29 @@ export default function StudentPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center w-full max-w-sm"
         >
-          <p className="text-slate-400 text-sm mb-2">Resposta correta</p>
-          <div className="bg-emerald-500/20 border border-emerald-500/40 rounded-2xl px-6 py-4 mb-6">
-            <span className="text-xl font-bold text-emerald-300">{qr.correctText}</span>
+          {/* Show the question text */}
+          {q && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-slate-300 text-base font-medium mb-5 leading-relaxed"
+            >
+              {q.text}
+            </motion.p>
+          )}
+
+          <p className="text-slate-500 text-xs uppercase tracking-wider mb-2">Resposta correta</p>
+          <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-2xl px-6 py-4 mb-6">
+            <div className="flex items-center justify-center gap-2">
+              <svg className="w-5 h-5 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="text-lg font-bold text-emerald-300">{qr.correctText}</span>
+            </div>
           </div>
 
-          <div className="bg-slate-900/50 rounded-xl p-4 mb-6">
-            <p className="text-sm text-slate-400 mb-1">Sua pontuação</p>
+          <div className="bg-slate-800/40 border border-slate-700/30 rounded-xl p-4 mb-6">
+            <p className="text-xs text-slate-500 mb-1">Sua pontuação</p>
             <p className="text-3xl font-black text-violet-400">
               {state.myScore.toLocaleString()}
             </p>
@@ -418,21 +488,33 @@ export default function StudentPage() {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.1 }}
-                  className={`flex items-center gap-3 px-4 py-2 rounded-xl text-sm ${
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm ${
                     r.nickname === state.nickname
-                      ? 'bg-violet-500/20 border border-violet-500/30'
-                      : 'bg-slate-800/50'
+                      ? 'bg-violet-500/15 border border-violet-500/25'
+                      : 'bg-slate-800/40'
                   }`}
                 >
-                  <span className="font-bold text-slate-500 w-5">{i + 1}</span>
-                  <span className="flex-1 font-medium">{r.nickname}</span>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    i === 0 ? 'bg-amber-500/20 text-amber-400' :
+                    i === 1 ? 'bg-slate-500/20 text-slate-400' :
+                    'bg-amber-700/20 text-amber-600'
+                  }`}>{i + 1}</span>
+                  <span className="flex-1 font-medium text-left">{r.nickname}</span>
                   <span className="text-violet-400 font-bold">{r.score.toLocaleString()}</span>
                 </motion.div>
               ))}
             </div>
           )}
 
-          <p className="text-slate-600 text-xs mt-6">Aguardando próxima questão...</p>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="text-slate-600 text-xs mt-6 flex items-center justify-center gap-2"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-600 animate-pulse" />
+            Aguardando próxima questão...
+          </motion.p>
         </motion.div>
       </div>
     );
@@ -507,16 +589,16 @@ export default function StudentPage() {
 
   return (
     <>
-      {/* Logout button — visible whenever there is an active session */}
+      {/* Logout button — top-left to avoid overlapping the timer at top-right */}
       {state.pin && (
         <motion.button
-          initial={{ opacity: 0, x: 20 }}
+          initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           onClick={handleLogout}
-          className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/90 backdrop-blur border border-slate-700 text-slate-400 hover:text-rose-400 hover:border-rose-500/50 hover:bg-rose-500/10 text-sm font-medium transition-all shadow-lg"
+          className="fixed top-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 text-slate-500 hover:text-rose-400 hover:border-rose-500/50 hover:bg-rose-500/10 text-xs font-medium transition-all"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
           </svg>
           Sair
         </motion.button>

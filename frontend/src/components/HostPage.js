@@ -29,6 +29,7 @@ export default function HostPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [countdown, setCountdown] = useState(null);
+  const [questionTime, setQuestionTime] = useState(20);
   const timerRef = useRef(null);
 
   // Socket event listeners — depend on isConnected so they register on the live socket
@@ -128,9 +129,9 @@ export default function HostPage() {
 
   const startGame = useCallback(() => {
     if (state.pin) {
-      emit('host:startGame', state.pin);
+      emit('host:startGame', { pin: state.pin, timeLimit: questionTime });
     }
-  }, [emit, state.pin]);
+  }, [emit, state.pin, questionTime]);
 
   const nextQuestion = useCallback(() => {
     if (state.pin) {
@@ -256,27 +257,35 @@ d) Salvador`}
           animate={{ opacity: 1, scale: 1 }}
           className="w-full max-w-2xl text-center"
         >
-          <p className="text-slate-400 mb-2">Código da Sala</p>
+          <p className="text-slate-500 text-xs uppercase tracking-wider mb-3">Código da Sala</p>
           <motion.div
             initial={{ scale: 0.8 }}
             animate={{ scale: 1 }}
             transition={{ type: 'spring', stiffness: 300 }}
-            className="text-8xl font-black tracking-[0.3em] text-white mb-6 font-mono"
+            className="bg-slate-800/40 border border-slate-700/30 rounded-2xl py-4 px-8 inline-block mb-6"
           >
-            {state.pin}
+            <span className="text-7xl md:text-8xl font-black tracking-[0.3em] text-white font-mono">
+              {state.pin}
+            </span>
           </motion.div>
 
           <p className="text-slate-400 mb-1">
             Acesse <span className="text-violet-400 font-medium">quizarena.app</span> e insira o código
           </p>
-          <p className="text-slate-500 text-sm mb-8">
+          <div className="flex items-center justify-center gap-2 text-slate-500 text-sm mb-8">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
             {state.totalQuestions} questões carregadas
-          </p>
+          </div>
 
           {/* Player list */}
-          <div className="bg-slate-900/50 rounded-2xl p-6 mb-6 min-h-[120px]">
+          <div className="bg-slate-800/30 border border-slate-700/30 rounded-2xl p-6 mb-6 min-h-[120px]">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-sm text-slate-400">
+              <span className="text-sm text-slate-400 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                </svg>
                 Jogadores ({state.players.length}/30)
               </span>
               <span className="flex items-center gap-2 text-xs text-emerald-400">
@@ -294,15 +303,50 @@ d) Salvador`}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                    className="inline-flex items-center px-4 py-2 rounded-full bg-slate-800 text-slate-200 text-sm font-medium border border-slate-700"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/80 text-slate-200 text-sm font-medium border border-slate-700/50"
                   >
+                    <span className="w-6 h-6 rounded-lg bg-violet-500/20 flex items-center justify-center text-xs font-bold text-violet-400">
+                      {p.nickname[0]?.toUpperCase()}
+                    </span>
                     {p.nickname}
                   </motion.span>
                 ))}
               </AnimatePresence>
               {state.players.length === 0 && (
-                <p className="text-slate-600 text-sm py-4">Nenhum jogador ainda...</p>
+                <div className="flex flex-col items-center gap-2 py-4">
+                  <svg className="w-8 h-8 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                  </svg>
+                  <p className="text-slate-600 text-sm">Nenhum jogador ainda...</p>
+                </div>
               )}
+            </div>
+          </div>
+
+          {/* Time configuration */}
+          <div className="bg-slate-900/50 border border-slate-700/30 rounded-2xl p-5 mb-6">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm text-slate-400 font-medium">Tempo por questão</span>
+            </div>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {[10, 15, 20, 30, 45, 60].map(t => (
+                <motion.button
+                  key={t}
+                  onClick={() => setQuestionTime(t)}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    questionTime === t
+                      ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/25 ring-2 ring-violet-400/30'
+                      : 'bg-slate-800/80 text-slate-400 hover:bg-slate-700 hover:text-slate-300 border border-slate-700/50'
+                  }`}
+                >
+                  {t}s
+                </motion.button>
+              ))}
             </div>
           </div>
 
@@ -333,26 +377,44 @@ d) Salvador`}
         </div>
       );
     } else {
+      const timeLimit = state.currentQuestion?.timeLimit || 20;
+      const timerProgress = countdown !== null ? countdown / timeLimit : 1;
+      const circumference = 2 * Math.PI * 22;
+
       screen = (
         <div className="min-h-screen flex flex-col p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
-            <span className="text-slate-400 text-sm">
+            <span className="text-slate-400 text-sm font-medium bg-slate-800/60 px-3 py-1.5 rounded-lg">
               Questão {state.currentQuestionIndex + 1}/{state.totalQuestions}
             </span>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-slate-400">
-                Respostas: {state.answerCount}/{state.players.length}
+              <span className="text-sm text-slate-400 bg-slate-800/60 px-3 py-1.5 rounded-lg">
+                <span className="text-slate-500">Respostas:</span> {state.answerCount}/{state.players.length}
               </span>
+              {/* Circular timer with SVG progress ring */}
               <motion.div
                 key={countdown}
                 initial={{ scale: 1.3 }}
                 animate={{ scale: 1 }}
-                className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl border-2 ${
-                  countdown <= 5 ? 'border-rose-500 text-rose-400' : 'border-violet-500 text-violet-400'
-                }`}
+                className="relative w-16 h-16 flex items-center justify-center"
               >
-                {countdown ?? '--'}
+                <svg className="absolute inset-0 w-16 h-16 -rotate-90" viewBox="0 0 48 48">
+                  <circle cx="24" cy="24" r="22" fill="none" stroke="currentColor"
+                    className="text-slate-800" strokeWidth="3" />
+                  <circle cx="24" cy="24" r="22" fill="none" stroke="currentColor"
+                    className={countdown <= 5 ? 'text-rose-500' : 'text-violet-500'}
+                    strokeWidth="3" strokeLinecap="round"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={circumference * (1 - timerProgress)}
+                    style={{ transition: 'stroke-dashoffset 1s linear' }}
+                  />
+                </svg>
+                <span className={`font-bold text-xl ${
+                  countdown <= 5 ? 'text-rose-400 animate-pulse' : 'text-violet-400'
+                }`}>
+                  {countdown ?? '--'}
+                </span>
               </motion.div>
             </div>
           </div>
@@ -375,9 +437,11 @@ d) Salvador`}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1 }}
-                  className={`${OPTION_COLORS[i]?.bg || 'bg-slate-700'} rounded-2xl p-6 flex items-center gap-4`}
+                  className={`${OPTION_COLORS[i]?.bg || 'bg-slate-700'} rounded-2xl p-6 flex items-center gap-4 shadow-lg`}
                 >
-                  <span className="text-3xl opacity-60">{OPTION_SHAPES[i]}</span>
+                  <span className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl">
+                    {OPTION_SHAPES[i]}
+                  </span>
                   <span className="text-xl font-medium">{opt.text}</span>
                 </motion.div>
               ))}

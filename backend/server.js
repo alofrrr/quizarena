@@ -10,6 +10,15 @@
  *  - Report generation
  */
 
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Carrega .env.development ou .env.production conforme NODE_ENV
+const envFile = process.env.NODE_ENV === 'production'
+  ? '.env.production'
+  : '.env.development';
+dotenv.config({ path: path.resolve(__dirname, envFile) });
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -778,10 +787,17 @@ io.on('connection', (socket) => {
   });
 
   // ── Host starts game ──
-  socket.on('host:startGame', (pin) => {
+  socket.on('host:startGame', (data) => {
+    const pin = typeof data === 'string' ? data : data?.pin;
+    const customTimeLimit = typeof data === 'object' ? data.timeLimit : undefined;
     const room = rooms.get(pin);
     if (!room || room.hostSocketId !== socket.id) return;
     if (Object.keys(room.players).length === 0) return;
+
+    // Apply custom time limit if provided (5–120 seconds)
+    if (customTimeLimit && customTimeLimit >= 5 && customTimeLimit <= 120) {
+      room.questions.forEach(q => { q.timeLimit = customTimeLimit; });
+    }
 
     room.status = 'playing';
     saveRoomToRedisImmediate(pin, room);
