@@ -1,7 +1,7 @@
 # QuizArena
 
 Real-time quiz platform. Professor uploads `.docx`, students join via 6-digit PIN.
-No database — all state lives in a `rooms` Map on the backend process.
+Primary state lives in a `rooms` Map on the backend process. Optional Redis for persistence across restarts and late-student sync.
 
 ## Stack
 
@@ -37,11 +37,12 @@ REACT_APP_SOCKET_URL=http://localhost:4000
 # backend/.env
 PORT=4000
 CLIENT_URL=http://localhost:3000
+REDIS_URL=redis://127.0.0.1:6379   # opcional — sem Redis, opera apenas em memória
 ```
 
 ## Architecture
 
-- `backend/server.js` — single file: REST upload endpoint + all Socket.io event handlers
+- `backend/server.js` — single file: REST upload endpoint + all Socket.io event handlers + Redis persistence
 - `frontend/src/contexts/SocketContext.js` — singleton socket, exposes `emit`, `on`, `off`
 - `frontend/src/contexts/GameContext.js` — shared React state for game flow
 - `frontend/src/components/` — HostPage (professor), StudentPage (student), LandingPage (join)
@@ -60,6 +61,7 @@ CLIENT_URL=http://localhost:3000
 | Server → All   | `question:show`     | `{ question, questionIndex }`      |
 | Server → All   | `question:results`  | `{ correctIndex, rankings }`       |
 | Server → All   | `game:finished`     | `{ rankings, report }`             |
+| Student → Server | `session:restore` | `{ pin, nickname }` → callback with sync state |
 
 ## .docx Question Format
 

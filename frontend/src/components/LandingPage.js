@@ -10,7 +10,11 @@ import axios from 'axios';
 // Ao recarregar a página o campo já vem preenchido, evitando redigitar.
 const CHAVE_NICKNAME = 'quizarena_ultimo_nickname';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+const API_URL = process.env.REACT_APP_API_URL || (
+  typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+    ? window.location.origin
+    : 'http://localhost:4000'
+);
 
 const OPTION_COLORS = [
   'from-rose-500 to-pink-600',

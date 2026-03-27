@@ -75,7 +75,8 @@ export default function StudentPage() {
   }, [on, off, dispatch, isConnected]);
 
   // After a page refresh the socket starts disconnected and then connects.
-  // Re-register with the server using the appropriate event based on game status.
+  // Re-register with the server using session:restore (backed by Redis) as primary,
+  // falling back to student:rejoin if session:restore fails.
   useEffect(() => {
     if (
       !isConnected ||
@@ -99,14 +100,8 @@ export default function StudentPage() {
       return;
     }
 
-    // Jogo em andamento — rejoin com sincronização de estado
-    emit('student:rejoin', { pin: state.pin, nickname: state.nickname }, (response) => {
-      if (!response || response.error) {
-        dispatch({ type: 'RESET' });
-        navigate('/');
-        return;
-      }
-
+    // Função para aplicar o estado recebido do servidor (usada por ambos os caminhos)
+    const applySyncState = (response) => {
       if (response.status === 'question' && !response.alreadyAnswered) {
         dispatch({
           type: 'SHOW_QUESTION',
@@ -118,7 +113,6 @@ export default function StudentPage() {
         });
         setCountdown(response.timeRemaining);
       } else if (response.status === 'question' && response.alreadyAnswered) {
-        // Já respondeu — mantém tela de aguardando resultado
         dispatch({ type: 'ANSWER_SUBMITTED', payload: { totalScore: response.score, streak: response.streak } });
       } else if (response.status === 'results') {
         dispatch({
@@ -135,7 +129,24 @@ export default function StudentPage() {
       } else if (response.status === 'finished') {
         dispatch({ type: 'GAME_FINISHED', payload: { rankings: response.rankings, report: response.report } });
       }
-      // playing: aguarda próxima questão, estado local já ok
+    };
+
+    // Tenta session:restore (busca do Redis) primeiro
+    emit('session:restore', { pin: state.pin, nickname: state.nickname }, (response) => {
+      if (response && !response.error) {
+        applySyncState(response);
+        return;
+      }
+
+      // Fallback: rejoin tradicional (busca da memória do servidor)
+      emit('student:rejoin', { pin: state.pin, nickname: state.nickname }, (rejoinResponse) => {
+        if (!rejoinResponse || rejoinResponse.error) {
+          dispatch({ type: 'RESET' });
+          navigate('/');
+          return;
+        }
+        applySyncState(rejoinResponse);
+      });
     });
   }, [isConnected, state.pin, state.nickname, state.status, emit, dispatch, navigate]);
 

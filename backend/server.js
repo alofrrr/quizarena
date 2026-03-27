@@ -18,6 +18,7 @@ const mammoth = require('mammoth');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const Redis = require('ioredis');
 
 const app = express();
 const server = http.createServer(app);
@@ -72,6 +73,191 @@ const upload = multer({
 
 // ─── In-Memory Data Store ───
 const rooms = new Map();
+
+// ─── Redis Client ───
+const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+let redis = null;
+let redisReady = false;
+
+try {
+  redis = new Redis(REDIS_URL, {
+    maxRetriesPerRequest: 3,
+    retryStrategy(times) {
+      if (times > 5) return null; // para de tentar após 5 falhas
+      return Math.min(times * 200, 2000);
+    },
+    lazyConnect: true,
+  });
+
+  redis.connect().then(async () => {
+    redisReady = true;
+    console.log('[Redis] Conectado com sucesso');
+
+    // Preload: restaura salas ativas do Redis para a memória
+    try {
+      const stream = redis.scanStream({ match: 'quizarena:room:*', count: 100 });
+      let loaded = 0;
+      stream.on('data', async (keys) => {
+        for (const key of keys) {
+          try {
+            const data = await redis.get(key);
+            if (!data) continue;
+            const room = JSON.parse(data);
+            if (!rooms.has(room.pin)) {
+              rooms.set(room.pin, { ...room, questionTimer: null });
+              loaded++;
+            }
+          } catch (e) {
+            console.warn(`[Redis] Erro ao restaurar ${key}:`, e.message);
+          }
+        }
+      });
+      stream.on('end', () => {
+        if (loaded > 0) console.log(`[Redis] ${loaded} sala(s) restaurada(s) do cache`);
+      });
+    } catch (err) {
+      console.warn('[Redis] Erro no preload de salas:', err.message);
+    }
+  }).catch((err) => {
+    console.warn('[Redis] Não foi possível conectar — operando apenas com memória:', err.message);
+    redisReady = false;
+  });
+
+  redis.on('error', (err) => {
+    if (redisReady) console.warn('[Redis] Erro de conexão:', err.message);
+    redisReady = false;
+  });
+
+  redis.on('ready', () => {
+    redisReady = true;
+  });
+} catch (err) {
+  console.warn('[Redis] Falha ao criar cliente — operando apenas com memória:', err.message);
+}
+
+// ─── Redis Helpers ───
+
+// Chave dinâmica por sala — garante isolamento entre salas
+function redisKey(pin) {
+  return `quizarena:room:${pin}`;
+}
+
+// Debounce por sala: evita escritas excessivas durante mudanças rápidas
+const debounceTimers = new Map();
+const DEBOUNCE_MS = 300;
+
+// Grace period para reconexão — evita deletar jogador durante page refresh
+const disconnectTimers = new Map();
+const DISCONNECT_GRACE_MS = 30000; // 30 segundos
+
+/**
+ * Salva o estado da sala no Redis com debounce.
+ * Serializa apenas os campos necessários (funções e timers não são serializáveis).
+ */
+function saveRoomToRedis(pin, room) {
+  if (!redisReady || !redis) return;
+
+  // Cancela timer anterior para esta sala
+  if (debounceTimers.has(pin)) {
+    clearTimeout(debounceTimers.get(pin));
+  }
+
+  debounceTimers.set(pin, setTimeout(async () => {
+    debounceTimers.delete(pin);
+    try {
+      const serializable = {
+        pin: room.pin,
+        questions: room.questions,
+        players: room.players,
+        answers: room.answers,
+        currentQuestion: room.currentQuestion,
+        status: room.status,
+        questionStartTime: room.questionStartTime,
+        hostSocketId: room.hostSocketId,
+        createdAt: room.createdAt,
+        currentAnswerCount: room.currentAnswerCount || 0,
+      };
+      // TTL de 3h — mesmo tempo de vida das salas em memória
+      await redis.set(redisKey(pin), JSON.stringify(serializable), 'EX', 3 * 60 * 60);
+    } catch (err) {
+      console.warn(`[Redis] Erro ao salvar sala ${pin}:`, err.message);
+    }
+  }, DEBOUNCE_MS));
+}
+
+/**
+ * Salva imediatamente (sem debounce) — para momentos críticos como
+ * início de questão ou fim de jogo onde o estado precisa estar disponível
+ * instantaneamente para reconexões.
+ */
+async function saveRoomToRedisImmediate(pin, room) {
+  if (!redisReady || !redis) return;
+
+  // Cancela qualquer debounce pendente
+  if (debounceTimers.has(pin)) {
+    clearTimeout(debounceTimers.get(pin));
+    debounceTimers.delete(pin);
+  }
+
+  try {
+    const serializable = {
+      pin: room.pin,
+      questions: room.questions,
+      players: room.players,
+      answers: room.answers,
+      currentQuestion: room.currentQuestion,
+      status: room.status,
+      questionStartTime: room.questionStartTime,
+      hostSocketId: room.hostSocketId,
+      createdAt: room.createdAt,
+      currentAnswerCount: room.currentAnswerCount || 0,
+    };
+    await redis.set(redisKey(pin), JSON.stringify(serializable), 'EX', 3 * 60 * 60);
+  } catch (err) {
+    console.warn(`[Redis] Erro ao salvar sala ${pin}:`, err.message);
+  }
+}
+
+/**
+ * Recupera o estado da sala do Redis.
+ * Retorna null se a chave não existir ou Redis estiver indisponível.
+ */
+async function getRoomFromRedis(pin) {
+  if (!redisReady || !redis) return null;
+
+  try {
+    const data = await redis.get(redisKey(pin));
+    if (!data) return null;
+    return JSON.parse(data);
+  } catch (err) {
+    console.warn(`[Redis] Erro ao recuperar sala ${pin}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Remove a sala do Redis.
+ */
+async function deleteRoomFromRedis(pin) {
+  if (!redisReady || !redis) return;
+  try {
+    await redis.del(redisKey(pin));
+  } catch (err) {
+    console.warn(`[Redis] Erro ao remover sala ${pin}:`, err.message);
+  }
+}
+
+/**
+ * Cancela o timer de desconexão de um jogador (se existir).
+ * Chamado quando o jogador reconecta antes do grace period expirar.
+ */
+function cancelDisconnectTimer(pin, nickname) {
+  const key = `${pin}:${nickname.toLowerCase()}`;
+  if (disconnectTimers.has(key)) {
+    clearTimeout(disconnectTimers.get(key));
+    disconnectTimers.delete(key);
+  }
+}
 
 // ─── Helpers ───
 
@@ -272,7 +458,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
     const pin = generatePin();
 
-    rooms.set(pin, {
+    const room = {
       pin,
       questions,
       players: {},
@@ -282,7 +468,9 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       questionStartTime: null,
       hostSocketId: null,
       createdAt: Date.now(),
-    });
+    };
+    rooms.set(pin, room);
+    saveRoomToRedis(pin, room);
 
     res.json({
       pin,
@@ -299,8 +487,19 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-app.get('/api/room/:pin', (req, res) => {
-  const room = rooms.get(req.params.pin);
+app.get('/api/room/:pin', async (req, res) => {
+  let room = rooms.get(req.params.pin);
+
+  // Fallback: tenta recuperar do Redis se não está em memória
+  if (!room && redisReady) {
+    const cached = await getRoomFromRedis(req.params.pin);
+    if (cached) {
+      rooms.set(req.params.pin, { ...cached, questionTimer: null });
+      room = rooms.get(req.params.pin);
+      console.log(`[Redis] Sala ${req.params.pin} restaurada do cache (GET /api/room)`);
+    }
+  }
+
   if (!room) {
     return res.status(404).json({ error: 'Sala não encontrada' });
   }
@@ -317,14 +516,118 @@ app.get('/api/room/:pin', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`[Socket] Connected: ${socket.id}`);
 
+  // ── Sincronização inicial: aluno atrasado ou reconexão após restart do servidor ──
+  // O frontend emite 'session:restore' com { pin, nickname } se tiver sessão salva.
+  // Usamos socket.emit (privado) para não afetar outros clientes na sala.
+  socket.on('session:restore', async ({ pin, nickname }, callback) => {
+    // 1. Tenta encontrar a sala na memória
+    let room = rooms.get(pin);
+
+    // 2. Se não está em memória, tenta recuperar do Redis (ex: após restart do servidor)
+    if (!room && redisReady) {
+      const cached = await getRoomFromRedis(pin);
+      if (cached) {
+        // Reconstrói a sala na memória a partir do Redis
+        rooms.set(pin, {
+          ...cached,
+          questionTimer: null, // timers não são serializáveis
+        });
+        room = rooms.get(pin);
+        console.log(`[Redis] Sala ${pin} restaurada do cache`);
+      }
+    }
+
+    if (!room) return callback?.({ error: 'Sala não encontrada' });
+
+    // Verifica se o jogador existe na sala
+    const playerEntry = Object.entries(room.players).find(
+      ([, p]) => p.nickname.toLowerCase() === nickname.toLowerCase()
+    );
+    if (!playerEntry) return callback?.({ error: 'Jogador não encontrado na sala' });
+
+    const [oldSocketId, playerData] = playerEntry;
+
+    // Cancela timer de desconexão pendente (page refresh rápido)
+    cancelDisconnectTimer(pin, nickname);
+
+    // Migra para o novo socketId
+    if (oldSocketId !== socket.id) {
+      delete room.players[oldSocketId];
+      room.players[socket.id] = { ...playerData, socketId: socket.id };
+      room.answers.forEach(a => {
+        if (a.socketId === oldSocketId) a.socketId = socket.id;
+      });
+      saveRoomToRedis(pin, room);
+    }
+
+    socket.join(pin);
+    socket.data = { role: 'student', pin, nickname };
+
+    // Monta estado atual — apenas para quem conectou (socket.emit, NÃO io.emit)
+    const player = room.players[socket.id];
+    const syncPayload = {
+      status: room.status,
+      score: player.score,
+      streak: player.streak,
+      totalQuestions: room.questions.length,
+    };
+
+    if (room.status === 'question') {
+      const q = room.questions[room.currentQuestion];
+      const elapsed = Math.floor((Date.now() - room.questionStartTime) / 1000);
+      const timeRemaining = Math.max(0, q.timeLimit - elapsed);
+      const alreadyAnswered = room.answers.some(
+        a => a.socketId === socket.id && a.questionIndex === room.currentQuestion
+      );
+      syncPayload.questionIndex = room.currentQuestion;
+      syncPayload.question = {
+        id: q.id,
+        text: q.text,
+        options: q.options.map(o => ({ letter: o.letter, text: o.text })),
+        timeLimit: q.timeLimit,
+      };
+      syncPayload.timeRemaining = timeRemaining;
+      syncPayload.alreadyAnswered = alreadyAnswered;
+    } else if (room.status === 'results') {
+      const q = room.questions[room.currentQuestion];
+      const questionAnswers = room.answers.filter(a => a.questionIndex === room.currentQuestion);
+      syncPayload.questionIndex = room.currentQuestion;
+      syncPayload.correctIndex = q.correctIndex;
+      syncPayload.correctText = q.options[q.correctIndex].text;
+      syncPayload.optionCounts = q.options.map((_, i) =>
+        questionAnswers.filter(a => a.selectedOption === i).length
+      );
+      syncPayload.totalPlayers = Object.keys(room.players).length;
+      syncPayload.rankings = getRankings(room).slice(0, 5);
+    } else if (room.status === 'finished') {
+      syncPayload.rankings = getRankings(room);
+      syncPayload.report = generateReport(room);
+    }
+
+    // Emite APENAS para este socket — não afeta outros clientes
+    callback?.(syncPayload);
+  });
+
   // ── Host joins room ──
-  socket.on('host:join', (pin, callback) => {
-    const room = rooms.get(pin);
+  socket.on('host:join', async (pin, callback) => {
+    let room = rooms.get(pin);
+
+    // Fallback: tenta recuperar do Redis se não está em memória
+    if (!room && redisReady) {
+      const cached = await getRoomFromRedis(pin);
+      if (cached) {
+        rooms.set(pin, { ...cached, questionTimer: null });
+        room = rooms.get(pin);
+        console.log(`[Redis] Sala ${pin} restaurada do cache (host:join)`);
+      }
+    }
+
     if (!room) return callback?.({ error: 'Sala não encontrada' });
 
     room.hostSocketId = socket.id;
     socket.join(pin);
     socket.data = { role: 'host', pin };
+    saveRoomToRedis(pin, room);
 
     callback?.({
       success: true,
@@ -338,8 +641,19 @@ io.on('connection', (socket) => {
   });
 
   // ── Student joins room ──
-  socket.on('student:join', ({ pin, nickname }, callback) => {
-    const room = rooms.get(pin);
+  socket.on('student:join', async ({ pin, nickname }, callback) => {
+    let room = rooms.get(pin);
+
+    // Fallback: tenta recuperar do Redis se não está em memória
+    if (!room && redisReady) {
+      const cached = await getRoomFromRedis(pin);
+      if (cached) {
+        rooms.set(pin, { ...cached, questionTimer: null });
+        room = rooms.get(pin);
+        console.log(`[Redis] Sala ${pin} restaurada do cache (student:join)`);
+      }
+    }
+
     if (!room) return callback?.({ error: 'Sala não encontrada' });
     if (room.status !== 'lobby') return callback?.({ error: 'O jogo já começou' });
     if (Object.keys(room.players).length >= 30) return callback?.({ error: 'Sala cheia (máx. 30)' });
@@ -366,12 +680,24 @@ io.on('connection', (socket) => {
       playerCount: Object.keys(room.players).length,
     });
 
+    saveRoomToRedis(pin, room);
     callback?.({ success: true, nickname });
   });
 
   // ── Student rejoin (reconexão mid-game) ──
-  socket.on('student:rejoin', ({ pin, nickname }, callback) => {
-    const room = rooms.get(pin);
+  socket.on('student:rejoin', async ({ pin, nickname }, callback) => {
+    let room = rooms.get(pin);
+
+    // Fallback: tenta recuperar do Redis se não está em memória
+    if (!room && redisReady) {
+      const cached = await getRoomFromRedis(pin);
+      if (cached) {
+        rooms.set(pin, { ...cached, questionTimer: null });
+        room = rooms.get(pin);
+        console.log(`[Redis] Sala ${pin} restaurada do cache (rejoin)`);
+      }
+    }
+
     if (!room) return callback?.({ error: 'Sala não encontrada' });
 
     // Localiza o jogador pelo nickname independente do socketId antigo
@@ -381,6 +707,9 @@ io.on('connection', (socket) => {
     if (!oldEntry) return callback?.({ error: 'Jogador não encontrado na sala' });
 
     const [oldSocketId, playerData] = oldEntry;
+
+    // Cancela timer de desconexão pendente (page refresh rápido)
+    cancelDisconnectTimer(pin, nickname);
 
     // Migra para o novo socketId
     delete room.players[oldSocketId];
@@ -393,6 +722,7 @@ io.on('connection', (socket) => {
 
     socket.join(pin);
     socket.data = { role: 'student', pin, nickname };
+    saveRoomToRedis(pin, room);
 
     // Monta estado atual para o aluno se resincronizar
     const player = room.players[socket.id];
@@ -454,6 +784,7 @@ io.on('connection', (socket) => {
     if (Object.keys(room.players).length === 0) return;
 
     room.status = 'playing';
+    saveRoomToRedisImmediate(pin, room);
     io.to(pin).emit('game:started', {
       totalQuestions: room.questions.length,
     });
@@ -474,6 +805,7 @@ io.on('connection', (socket) => {
       room.status = 'finished';
       const report = generateReport(room);
       const rankings = getRankings(room);
+      saveRoomToRedisImmediate(pin, room);
       io.to(pin).emit('game:finished', { rankings, report });
       return;
     }
@@ -482,6 +814,9 @@ io.on('connection', (socket) => {
     room.status = 'question';
     room.questionStartTime = Date.now();
     room.currentAnswerCount = 0;
+
+    // Salva imediatamente — alunos reconectando precisam ver a questão atual
+    saveRoomToRedisImmediate(pin, room);
 
     // Send question to all
     io.to(pin).emit('question:show', {
@@ -507,6 +842,7 @@ io.on('connection', (socket) => {
 
     clearTimeout(room.questionTimer);
     room.status = 'results';
+    saveRoomToRedisImmediate(pin, room);
 
     const q = room.questions[room.currentQuestion];
     const questionAnswers = room.answers.filter(
@@ -575,6 +911,9 @@ io.on('connection', (socket) => {
 
     room.currentAnswerCount++;
 
+    // Debounced — respostas podem chegar em rajada
+    saveRoomToRedis(pin, room);
+
     // Notify student
     callback?.({
       isCorrect,
@@ -597,8 +936,19 @@ io.on('connection', (socket) => {
   });
 
   // ── Get report ──
-  socket.on('host:getReport', (pin, callback) => {
-    const room = rooms.get(pin);
+  socket.on('host:getReport', async (pin, callback) => {
+    let room = rooms.get(pin);
+
+    // Fallback: tenta recuperar do Redis
+    if (!room && redisReady) {
+      const cached = await getRoomFromRedis(pin);
+      if (cached) {
+        rooms.set(pin, { ...cached, questionTimer: null });
+        room = rooms.get(pin);
+        console.log(`[Redis] Sala ${pin} restaurada do cache (host:getReport)`);
+      }
+    }
+
     if (!room) return callback?.({ error: 'Sala não encontrada' });
     const report = generateReport(room);
     callback?.(report);
@@ -613,11 +963,38 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     if (role === 'student' && room.players[socket.id]) {
-      delete room.players[socket.id];
-      io.to(room.hostSocketId).emit('player:left', {
-        nickname,
-        playerCount: Object.keys(room.players).length,
-      });
+      // No lobby, remove imediatamente — não há rejoin esperado
+      if (room.status === 'lobby') {
+        delete room.players[socket.id];
+        io.to(room.hostSocketId).emit('player:left', {
+          nickname,
+          playerCount: Object.keys(room.players).length,
+        });
+        saveRoomToRedis(pin, room);
+      } else {
+        // Durante o jogo, aguarda grace period antes de remover
+        // Permite que o aluno reconecte após page refresh
+        const key = `${pin}:${nickname.toLowerCase()}`;
+        const timer = setTimeout(() => {
+          disconnectTimers.delete(key);
+          const currentRoom = rooms.get(pin);
+          if (!currentRoom) return;
+
+          // Verifica se o jogador ainda está com o socketId antigo
+          // (se reconectou, o socketId já mudou e não deve ser removido)
+          if (currentRoom.players[socket.id]) {
+            delete currentRoom.players[socket.id];
+            io.to(currentRoom.hostSocketId).emit('player:left', {
+              nickname,
+              playerCount: Object.keys(currentRoom.players).length,
+            });
+            saveRoomToRedis(pin, currentRoom);
+            console.log(`[Disconnect] Jogador ${nickname} removido da sala ${pin} (grace period expirou)`);
+          }
+        }, DISCONNECT_GRACE_MS);
+        disconnectTimers.set(key, timer);
+        console.log(`[Disconnect] Grace period iniciado para ${nickname} na sala ${pin}`);
+      }
     }
 
     console.log(`[Socket] Disconnected: ${socket.id} (${role})`);
@@ -640,10 +1017,22 @@ setInterval(() => {
   for (const [pin, room] of rooms) {
     if (now - room.createdAt > 3 * 60 * 60 * 1000) {
       rooms.delete(pin);
+      deleteRoomFromRedis(pin);
       console.log(`[Cleanup] Room ${pin} removed (stale)`);
     }
   }
 }, 30 * 60 * 1000);
+
+// ─── Serve Frontend (production) ───
+// Em produção o backend serve os arquivos estáticos do React build
+const frontendBuild = path.join(__dirname, '..', 'frontend', 'build');
+if (fs.existsSync(frontendBuild)) {
+  app.use(express.static(frontendBuild));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendBuild, 'index.html'));
+  });
+  console.log('[Static] Servindo frontend build de', frontendBuild);
+}
 
 // ─── Start Server ───
 const PORT = process.env.PORT || 4000;
