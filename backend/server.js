@@ -495,6 +495,69 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   }
 });
 
+// ─── Create room from manually entered questions ───
+app.post('/api/create-room', (req, res) => {
+  try {
+    const { questions: rawQuestions } = req.body;
+
+    if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+      return res.status(400).json({ error: 'Nenhuma questão fornecida' });
+    }
+
+    const questions = [];
+    for (let i = 0; i < rawQuestions.length; i++) {
+      const q = rawQuestions[i];
+      const opts = (q.options || []).filter(o => typeof o === 'string' && o.trim());
+
+      if (!q.text || !q.text.trim()) {
+        return res.status(400).json({ error: `Questão ${i + 1}: texto vazio` });
+      }
+      if (opts.length < 2) {
+        return res.status(400).json({ error: `Questão ${i + 1}: mínimo 2 opções` });
+      }
+      if (q.correctIndex == null || q.correctIndex < 0 || q.correctIndex >= opts.length) {
+        return res.status(400).json({ error: `Questão ${i + 1}: resposta correta não selecionada` });
+      }
+
+      questions.push({
+        id: i + 1,
+        text: q.text.trim(),
+        options: opts.map((text, j) => ({ letter: String.fromCharCode(97 + j), text: text.trim() })),
+        correctIndex: q.correctIndex,
+        timeLimit: 20,
+      });
+    }
+
+    const pin = generatePin();
+    const room = {
+      pin,
+      questions,
+      players: {},
+      answers: [],
+      currentQuestion: -1,
+      status: 'lobby',
+      questionStartTime: null,
+      hostSocketId: null,
+      createdAt: Date.now(),
+    };
+    rooms.set(pin, room);
+    saveRoomToRedis(pin, room);
+
+    res.json({
+      pin,
+      questionCount: questions.length,
+      questions: questions.map(q => ({
+        id: q.id,
+        text: q.text,
+        options: q.options.map(o => o.text),
+      })),
+    });
+  } catch (err) {
+    console.error('Create room error:', err);
+    res.status(500).json({ error: 'Erro ao criar sala' });
+  }
+});
+
 app.get('/api/room/:pin', async (req, res) => {
   let room = rooms.get(req.params.pin);
 
