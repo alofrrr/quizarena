@@ -5,7 +5,8 @@
       "Bash(mkdir -p /c/Users/Usuario/Desktop/quizarena/.claude/skills/debug-workflow)",
       "Bash(mkdir -p /c/Users/Usuario/Desktop/quizarena/.claude/skills/verification-workflow)",
       "Bash(mkdir -p /c/Users/Usuario/Desktop/quizarena/.claude/agents)",
-      "Bash(node --check /c/Users/Usuario/Desktop/quizarena/backend/server.js)"
+      "Bash(node --check /c/Users/Usuario/Desktop/quizarena/backend/server.js)",
+      "Bash(find /c/Users/Usuario/Desktop/quizarena -maxdepth 3 -type d ! -path */node_modules/* ! -path */.git/*)"
     ]
   }
 }
