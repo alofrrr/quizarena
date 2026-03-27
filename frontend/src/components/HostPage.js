@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
+import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
@@ -19,6 +20,7 @@ const OPTION_SHAPES = ['▲', '◆', '●', '■'];
 export default function HostPage() {
   const { emit, on, off, isConnected } = useSocket();
   const { state, dispatch } = useGame();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -143,11 +145,12 @@ export default function HostPage() {
     URL.revokeObjectURL(url);
   }, [state.report, state.pin]);
 
-  // Clears local session and returns to the landing page
+  // Clears local session, Google auth, and returns to login
   const handleLogout = useCallback(() => {
     dispatch({ type: 'RESET' });
-    navigate('/');
-  }, [dispatch, navigate]);
+    logout();
+    navigate('/login');
+  }, [dispatch, logout, navigate]);
 
   // ── SCREENS ──
 
@@ -603,20 +606,42 @@ d) Salvador`}
 
   return (
     <>
-      {/* Logout button — visible whenever there is an active room */}
-      {state.pin && (
+      {/* Header com info do usuário e botão de logout */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="fixed top-4 right-4 z-50 flex items-center gap-3"
+      >
+        {user && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/90 backdrop-blur border border-slate-700 shadow-lg">
+            {user.picture ? (
+              <img
+                src={user.picture}
+                alt={user.name}
+                className="w-7 h-7 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold text-white">
+                {user.name?.[0]?.toUpperCase()}
+              </div>
+            )}
+            <span className="text-sm text-slate-300 font-medium max-w-[140px] truncate">
+              {user.name}
+            </span>
+          </div>
+        )}
         <motion.button
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
+          whileHover={{ scale: 1.05 }}
           onClick={handleLogout}
-          className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/90 backdrop-blur border border-slate-700 text-slate-400 hover:text-rose-400 hover:border-rose-500/50 hover:bg-rose-500/10 text-sm font-medium transition-all shadow-lg"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/90 backdrop-blur border border-slate-700 text-slate-400 hover:text-rose-400 hover:border-rose-500/50 hover:bg-rose-500/10 text-sm font-medium transition-all shadow-lg"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
           Sair
         </motion.button>
-      )}
+      </motion.div>
       {screen}
     </>
   );
