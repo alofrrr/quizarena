@@ -369,6 +369,84 @@ io.on('connection', (socket) => {
     callback?.({ success: true, nickname });
   });
 
+  // ── Student rejoin (reconexão mid-game) ──
+  socket.on('student:rejoin', ({ pin, nickname }, callback) => {
+    const room = rooms.get(pin);
+    if (!room) return callback?.({ error: 'Sala não encontrada' });
+
+    // Localiza o jogador pelo nickname independente do socketId antigo
+    const oldEntry = Object.entries(room.players).find(
+      ([, p]) => p.nickname.toLowerCase() === nickname.toLowerCase()
+    );
+    if (!oldEntry) return callback?.({ error: 'Jogador não encontrado na sala' });
+
+    const [oldSocketId, playerData] = oldEntry;
+
+    // Migra para o novo socketId
+    delete room.players[oldSocketId];
+    room.players[socket.id] = { ...playerData, socketId: socket.id };
+
+    // Atualiza respostas antigas para o novo socketId
+    room.answers.forEach(a => {
+      if (a.socketId === oldSocketId) a.socketId = socket.id;
+    });
+
+    socket.join(pin);
+    socket.data = { role: 'student', pin, nickname };
+
+    // Monta estado atual para o aluno se resincronizar
+    const player = room.players[socket.id];
+    const base = { status: room.status, score: player.score, streak: player.streak };
+
+    if (room.status === 'question') {
+      const q = room.questions[room.currentQuestion];
+      const elapsed = Math.floor((Date.now() - room.questionStartTime) / 1000);
+      const timeRemaining = Math.max(0, q.timeLimit - elapsed);
+      const alreadyAnswered = room.answers.some(
+        a => a.socketId === socket.id && a.questionIndex === room.currentQuestion
+      );
+      return callback?.({
+        ...base,
+        questionIndex: room.currentQuestion,
+        totalQuestions: room.questions.length,
+        question: {
+          id: q.id,
+          text: q.text,
+          options: q.options.map(o => ({ letter: o.letter, text: o.text })),
+          timeLimit: q.timeLimit,
+        },
+        timeRemaining,
+        alreadyAnswered,
+      });
+    }
+
+    if (room.status === 'results') {
+      const q = room.questions[room.currentQuestion];
+      const questionAnswers = room.answers.filter(a => a.questionIndex === room.currentQuestion);
+      const optionCounts = q.options.map((_, i) =>
+        questionAnswers.filter(a => a.selectedOption === i).length
+      );
+      return callback?.({
+        ...base,
+        questionIndex: room.currentQuestion,
+        totalQuestions: room.questions.length,
+        correctIndex: q.correctIndex,
+        correctText: q.options[q.correctIndex].text,
+        optionCounts,
+        totalPlayers: Object.keys(room.players).length,
+        rankings: getRankings(room).slice(0, 5),
+      });
+    }
+
+    if (room.status === 'finished') {
+      const report = generateReport(room);
+      return callback?.({ ...base, rankings: getRankings(room), report });
+    }
+
+    // lobby ou playing
+    callback?.({ ...base, totalQuestions: room.questions.length });
+  });
+
   // ── Host starts game ──
   socket.on('host:startGame', (pin) => {
     const room = rooms.get(pin);

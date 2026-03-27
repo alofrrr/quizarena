@@ -13,6 +13,7 @@ const OPTION_COLORS = [
 ];
 
 const OPTION_SHAPES = ['▲', '◆', '●', '■'];
+const ACTIVE_STATUSES = ['lobby', 'playing', 'question', 'answered', 'results', 'finished'];
 
 export default function StudentPage() {
   const { emit, on, off, isConnected } = useSocket();
@@ -74,26 +75,68 @@ export default function StudentPage() {
   }, [on, off, dispatch, isConnected]);
 
   // After a page refresh the socket starts disconnected and then connects.
-  // When that happens and the student was in the lobby, re-emit student:join
-  // so the server recognises them again.
+  // Re-register with the server using the appropriate event based on game status.
   useEffect(() => {
     if (
-      isConnected &&
-      !wasConnectedOnMount.current &&
-      !hasRejoined.current &&
-      state.pin &&
-      state.nickname &&
-      state.status === 'lobby'
-    ) {
-      hasRejoined.current = true;
+      !isConnected ||
+      wasConnectedOnMount.current ||
+      hasRejoined.current ||
+      !state.pin ||
+      !state.nickname ||
+      !ACTIVE_STATUSES.includes(state.status)
+    ) return;
+
+    hasRejoined.current = true;
+
+    if (state.status === 'lobby') {
+      // Jogo ainda não começou — join normal
       emit('student:join', { pin: state.pin, nickname: state.nickname }, (response) => {
         if (response?.error) {
-          // Room no longer available — reset and go back to join screen
           dispatch({ type: 'RESET' });
           navigate('/');
         }
       });
+      return;
     }
+
+    // Jogo em andamento — rejoin com sincronização de estado
+    emit('student:rejoin', { pin: state.pin, nickname: state.nickname }, (response) => {
+      if (!response || response.error) {
+        dispatch({ type: 'RESET' });
+        navigate('/');
+        return;
+      }
+
+      if (response.status === 'question' && !response.alreadyAnswered) {
+        dispatch({
+          type: 'SHOW_QUESTION',
+          payload: {
+            question: { ...response.question, timeLimit: response.timeRemaining },
+            questionIndex: response.questionIndex,
+            totalQuestions: response.totalQuestions,
+          },
+        });
+        setCountdown(response.timeRemaining);
+      } else if (response.status === 'question' && response.alreadyAnswered) {
+        // Já respondeu — mantém tela de aguardando resultado
+        dispatch({ type: 'ANSWER_SUBMITTED', payload: { totalScore: response.score, streak: response.streak } });
+      } else if (response.status === 'results') {
+        dispatch({
+          type: 'QUESTION_RESULTS',
+          payload: {
+            questionIndex: response.questionIndex,
+            correctIndex: response.correctIndex,
+            correctText: response.correctText,
+            optionCounts: response.optionCounts,
+            totalPlayers: response.totalPlayers,
+            rankings: response.rankings,
+          },
+        });
+      } else if (response.status === 'finished') {
+        dispatch({ type: 'GAME_FINISHED', payload: { rankings: response.rankings, report: response.report } });
+      }
+      // playing: aguarda próxima questão, estado local já ok
+    });
   }, [isConnected, state.pin, state.nickname, state.status, emit, dispatch, navigate]);
 
   // Countdown timer
